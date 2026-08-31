@@ -1,40 +1,26 @@
-import { NextResponse, type NextRequest } from 'next/server'
+import { NextResponse } from 'next/server'
 
 /**
- * Gate for the authenticated app.
+ * No server-side auth gate.
  *
- * This only checks for the *presence* of the `AWF_AT` session cookie so an
- * unauthenticated browser is sent to `/login` instead of hitting API calls
- * that 401. The API remains the real authority: it still verifies the JWT
- * and resolves the workspace on every request. A present-but-invalid
- * cookie is handled client-side by `AuthGuard` (via `GET /auth/me`).
+ * The session cookie (`AWF_AT`) is issued by the API on its own origin, so it
+ * is not readable here on the web origin — a presence check would always fail
+ * and bounce authenticated users back to `/login`. Authentication for the app
+ * routes (`/dashboard`, `/workflows`, `/executions`, `/integrations`,
+ * `/variables`, `/templates`, `/settings`, `/profile`, …) is handled entirely
+ * client-side by `AuthGuard`, which verifies the session with a credentialed
+ * `GET /auth/me` against the API. `/` (marketing) and `/login` are public and
+ * need no handling here either.
+ *
+ * This proxy is kept as an intentional pass-through so a real server-side
+ * concern (e.g. a first-party session once the app and API share a domain)
+ * has an obvious home without adding a new file.
  */
-
-const AUTH_COOKIE = 'AWF_AT'
-// `/` is the public marketing landing page; `/login` is the auth screen.
-// Everything else stays gated behind the session cookie.
-const PUBLIC_PATHS = ['/', '/login']
-
-export function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl
-  const isPublic = PUBLIC_PATHS.some(
-    (p) => pathname === p || pathname.startsWith(`${p}/`),
-  )
-  const hasSession = request.cookies.has(AUTH_COOKIE)
-
-  if (!hasSession && !isPublic) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    if (pathname && pathname !== '/') {
-      url.searchParams.set('next', pathname)
-    }
-    return NextResponse.redirect(url)
-  }
-
+export function proxy() {
   return NextResponse.next()
 }
 
 export const config = {
-  // Run on everything except Next internals and static assets.
+  // Skip Next internals and static assets even though this is a no-op.
   matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.[\\w]+$).*)'],
 }
