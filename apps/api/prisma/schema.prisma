@@ -1,0 +1,369 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Workflow {
+  id          String            @id @default(uuid())
+  name        String
+  description String?
+  status      WorkflowStatus    @default(DRAFT)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  versions    WorkflowVersion[]
+  executions  Execution[]
+  webhook     WorkflowWebhook?
+  templates   WorkflowTemplate[]
+}
+
+/// A reusable, workspace-scoped pointer to an existing source Workflow.
+/// It stores only presentation metadata — never a workflow definition or
+/// execution logic. "Using" a template clones the source workflow into a
+/// brand-new workflow; the source is never mutated.
+model WorkflowTemplate {
+  id          String   @id @default(uuid())
+  workspaceId String
+  workflowId  String
+  name        String
+  description String?
+  category    String   @default("General")
+  featured    Boolean  @default(false)
+  usageCount  Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workflow  Workflow  @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([workflowId])
+}
+
+model WorkflowWebhook {
+  id          String   @id @default(uuid())
+  workflowId  String   @unique
+  workspaceId String
+  secret      String
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workflow    Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+model WorkflowVersion {
+  id          String      @id @default(uuid())
+  workflowId  String
+  version     Int
+  isPublished Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  edges       Edge[]
+  nodes       Node[]
+  workflow    Workflow    @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  executions  Execution[]
+
+  @@unique([workflowId, version])
+}
+
+model Node {
+  id                String          @id @default(uuid())
+  workflowVersionId String
+  type              NodeType
+  label             String
+  positionX         Float
+  positionY         Float
+  config            Json
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  workflowVersion   WorkflowVersion @relation(fields: [workflowVersionId], references: [id], onDelete: Cascade)
+  executionSteps    ExecutionStep[]
+
+  @@index([workflowVersionId])
+}
+
+model Edge {
+  id                String          @id @default(uuid())
+  workflowVersionId String
+  sourceNodeId      String
+  targetNodeId      String
+  sourceHandle      String?
+  targetHandle      String?
+  createdAt         DateTime        @default(now())
+  workflowVersion   WorkflowVersion @relation(fields: [workflowVersionId], references: [id], onDelete: Cascade)
+
+  @@index([workflowVersionId])
+}
+
+model Execution {
+  id                String          @id @default(uuid())
+  workflowId        String
+  workflowVersionId String
+  status            ExecutionStatus @default(PENDING)
+  triggerType       String          @default("MANUAL")
+  input             Json?
+  output            Json?
+  error             String?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  workflow          Workflow        @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  workflowVersion   WorkflowVersion @relation(fields: [workflowVersionId], references: [id], onDelete: Cascade)
+  steps             ExecutionStep[]
+
+  @@index([workflowId])
+  @@index([workflowVersionId])
+  @@index([status])
+}
+
+model ExecutionStep {
+  id          String              @id @default(uuid())
+  executionId String
+  nodeId      String
+  status      ExecutionStepStatus @default(PENDING)
+  input       Json?
+  output      Json?
+  error       String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  duration    Int?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  execution   Execution           @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  node        Node                @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@index([executionId])
+  @@index([nodeId])
+  @@index([status])
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  password  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  memberships Membership[]
+  sessions    Session[]
+}
+
+model Integration {
+  id         String   @id @default(uuid())
+  workspaceId String
+  provider   String
+  name       String
+  status     String   @default("available")
+  config     Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  workspace  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  credentials IntegrationCredential[]
+
+  @@index([workspaceId])
+  @@index([provider])
+}
+
+model IntegrationCredential {
+  id            String       @id @default(uuid())
+  workspaceId   String
+  integrationId String?
+  provider      String
+  name          String
+  data          String
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  workspace     Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  integration   Integration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([provider])
+}
+
+model Workspace {
+  id                 String   @id @default(uuid())
+  name               String
+  slug               String   @unique
+  description        String?
+  defaultEnvironment String   @default("Production")
+  defaultTimezone    String   @default("UTC")
+  defaultVisibility  String   @default("Workspace")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  memberships Membership[]
+  integrations Integration[]
+  integrationCredentials IntegrationCredential[]
+  invitations            Invitation[]
+  apiKeys                ApiKey[]
+  notificationPreferences NotificationPreference[]
+  workflowTemplates       WorkflowTemplate[]
+}
+
+enum VariableType {
+  String
+  Number
+  Boolean
+  Secret
+}
+
+model Variable {
+  id          String        @id @default(uuid())
+  workspaceId String?
+  name        String
+  value       String
+  type        VariableType
+  environment String        @default("Production")
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([environment])
+  @@index([workspaceId])
+}
+
+model Membership {
+  id          String   @id @default(uuid())
+  userId      String
+  workspaceId String
+  role        String   @default("member")
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([workspaceId])
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Short-lived, single-use CSRF/binding token for an in-flight OAuth
+/// authorization (e.g. Gmail). Bound to the workspace + user that started
+/// it. Contains no secret material.
+model OAuthState {
+  id            String   @id @default(uuid())
+  state         String   @unique
+  provider      String
+  workspaceId   String
+  userId        String
+  integrationId String?
+  redirectTo    String?
+  expiresAt     DateTime
+  usedAt        DateTime?
+  createdAt     DateTime @default(now())
+
+  @@index([workspaceId])
+  @@index([expiresAt])
+}
+
+/// A pending invitation for someone to join a workspace. `token` is the
+/// single-use secret the invitee presents to accept. No mailer exists yet,
+/// so the token/link is returned to the inviting admin on creation.
+model Invitation {
+  id          String   @id @default(uuid())
+  workspaceId String
+  email       String
+  role        String   @default("member")
+  token       String   @unique
+  status      String   @default("pending")
+  invitedById String
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, email])
+  @@index([workspaceId])
+}
+
+/// A workspace API key. Only the sha256 hash is stored; the plaintext key is
+/// shown once at creation and never returned again.
+model ApiKey {
+  id          String    @id @default(uuid())
+  workspaceId String
+  name        String
+  prefix      String
+  hashedKey   String    @unique
+  createdById String
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+/// Per-user, per-workspace notification preferences. Stored as an opaque JSON
+/// blob matching the settings UI shape. Delivery is not yet implemented.
+model NotificationPreference {
+  id          String   @id @default(uuid())
+  userId      String
+  workspaceId String
+  preferences Json
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workspaceId])
+  @@index([workspaceId])
+}
+
+enum WorkflowStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum NodeType {
+  MANUAL_TRIGGER
+  WEBHOOK
+  HTTP_REQUEST
+  CONDITION
+  JSON_TRANSFORM
+  AI_PROMPT
+  AI_AGENT
+  STRUCTURED_EXTRACT
+  GMAIL
+  SLACK
+  POSTGRES
+  OUTPUT
+}
+
+enum ExecutionStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum ExecutionStepStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  SKIPPED
+  CANCELLED
+}
+
