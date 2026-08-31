@@ -78,12 +78,21 @@ export class ApiError extends Error {
 }
 
 function getBaseUrl(): string {
+  // Browser: go through the same-origin Next proxy at `/api/*` so the auth
+  // cookie stays first-party on the web origin. Every caller in this app is a
+  // client component, so this is the normal path.
+  if (typeof window !== 'undefined') {
+    return '/api'
+  }
+
+  // Server-side (rare): talk to the API directly.
   const baseUrl =
+    process.env.API_PROXY_TARGET?.trim() ||
     process.env.NEXT_PUBLIC_API_URL?.trim()
 
   if (!baseUrl) {
     throw new Error(
-      'NEXT_PUBLIC_API_URL is not configured.',
+      'API base URL is not configured (API_PROXY_TARGET / NEXT_PUBLIC_API_URL).',
     )
   }
 
@@ -104,7 +113,12 @@ function buildUrl(
         path.startsWith('/') ? path : `/${path}`
       }`
 
-  const url = new URL(normalizedPath)
+  // `normalizedPath` is relative in the browser (`/api/...`); resolve it
+  // against the current origin so `URL` can parse it.
+  const url = new URL(
+    normalizedPath,
+    typeof window !== 'undefined' ? window.location.origin : undefined,
+  )
 
   if (params) {
     Object.entries(params).forEach(
