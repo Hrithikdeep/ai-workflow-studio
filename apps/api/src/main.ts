@@ -8,9 +8,12 @@ import { createHash } from 'node:crypto';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Enable CORS for the web app running on localhost:3000
+  // Enable CORS for the web app. In production set CORS_ORIGIN to the deployed
+  // frontend origin (e.g. the Vercel URL); locally it falls back to
+  // http://localhost:3000. Credentials stay enabled for the auth cookie, so a
+  // wildcard origin is never used.
   app.enableCors({
-    origin: ['http://localhost:3000'],
+    origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
   });
@@ -106,9 +109,12 @@ async function bootstrap() {
     return next();
   });
 
-  await app.listen(3001);
+  // Railway injects PORT; fall back to 3001 for local development. Bind on
+  // 0.0.0.0 so the platform can route to the container.
+  const port = Number(process.env.PORT) || 3001;
+  await app.listen(port, '0.0.0.0');
 
-  console.log('API running on http://localhost:3001');
+  console.log(`API running on port ${port}`);
 }
 
 bootstrap();

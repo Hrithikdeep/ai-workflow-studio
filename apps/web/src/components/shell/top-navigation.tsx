@@ -1,11 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { Bell, ChevronRight } from 'lucide-react'
+import { Bell, ChevronRight, Moon, Sun } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { navigationItems } from '@/lib/navigation'
 import { useLogout, useSession } from '@/hooks/use-auth'
+import { useTheme } from '@/providers/theme-provider'
 
 function initials(value: string): string {
   const parts = value.trim().split(/[\s@.]+/).filter(Boolean)
@@ -17,6 +18,7 @@ export function TopNavigation() {
   const router = useRouter()
   const { data } = useSession()
   const logout = useLogout()
+  const { theme, toggleTheme } = useTheme()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
 
@@ -51,6 +53,25 @@ export function TopNavigation() {
         <DynamicBreadcrumb />
 
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            aria-label={
+              theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'
+            }
+            aria-pressed={theme === 'dark'}
+            title={
+              theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'
+            }
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white transition-colors hover:bg-slate-50"
+          >
+            {theme === 'dark' ? (
+              <Sun className="h-4 w-4 text-slate-600" />
+            ) : (
+              <Moon className="h-4 w-4 text-slate-600" />
+            )}
+          </button>
+
           <button className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white transition-colors hover:bg-slate-50">
             <Bell className="h-4 w-4 text-slate-600" />
           </button>

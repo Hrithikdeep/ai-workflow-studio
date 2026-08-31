@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Enable the `dark:` variant off a `.dark` class on <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -38,4 +41,128 @@ body {
 
 .field-input::placeholder {
   color: rgb(148 163 184);
+}
+
+/* ==========================================================================
+   Dark mode
+
+   Opt-in only, via the theme toggle in the authenticated app shell. The
+   visual remap is SCOPED to `[data-app-shell]` so the public marketing site
+   is left exactly as-is. These are hand-picked mappings of the app's small,
+   consistent slate/white palette — not a blind inversion. Blue accents and
+   the status colours (emerald / rose / amber / red) are intentionally left
+   untouched so success / error / active states stay distinguishable.
+   ========================================================================== */
+
+.dark {
+  color-scheme: dark;
+}
+
+/* Shell frame */
+.dark [data-app-shell] {
+  background-color: #0b1220;
+  color: #e2e8f0;
+}
+
+/* Surfaces */
+.dark [data-app-shell] .bg-white,
+.dark [data-app-shell] .hover\:bg-white:hover {
+  background-color: #0f172a;
+}
+.dark [data-app-shell] .bg-white\/90 {
+  background-color: rgb(15 23 42 / 0.9);
+}
+.dark [data-app-shell] .bg-white\/80 {
+  background-color: rgb(15 23 42 / 0.85);
+}
+.dark [data-app-shell] .bg-slate-50,
+.dark [data-app-shell] .hover\:bg-slate-50:hover {
+  background-color: #131c2e;
+}
+.dark [data-app-shell] .bg-slate-100,
+.dark [data-app-shell] .bg-slate-100\/80,
+.dark [data-app-shell] .hover\:bg-slate-100:hover {
+  background-color: #1e293b;
+}
+.dark [data-app-shell] .bg-slate-200,
+.dark [data-app-shell] .hover\:bg-slate-200:hover {
+  background-color: #334155;
+}
+.dark [data-app-shell] .bg-\[\#f8fafc\],
+.dark [data-app-shell] .bg-\[\#f8f8f6\] {
+  background-color: #0b1220;
+}
+/* Neutral avatar / chip fills — keep them legible against dark surfaces. */
+.dark [data-app-shell] .bg-slate-900,
+.dark [data-app-shell] .bg-slate-800,
+.dark [data-app-shell] .hover\:bg-slate-800:hover {
+  background-color: #334155;
+}
+/* Subtle active-nav / info tint — keep the blue identity. */
+.dark [data-app-shell] .bg-blue-50 {
+  background-color: rgb(37 99 235 / 0.16);
+}
+
+/* Borders */
+.dark [data-app-shell] .border-slate-100,
+.dark [data-app-shell] .border-slate-200,
+.dark [data-app-shell] .border-slate-200\/80 {
+  border-color: #24324a;
+}
+.dark [data-app-shell] .border-slate-300 {
+  border-color: #334155;
+}
+.dark [data-app-shell] .border-blue-100 {
+  border-color: rgb(59 130 246 / 0.35);
+}
+.dark [data-app-shell] .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+.dark [data-app-shell] .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: #24324a;
+}
+
+/* Text hierarchy */
+.dark [data-app-shell] .text-slate-900 {
+  color: #f1f5f9;
+}
+.dark [data-app-shell] .text-slate-800 {
+  color: #e2e8f0;
+}
+.dark [data-app-shell] .text-slate-700 {
+  color: #cbd5e1;
+}
+.dark [data-app-shell] .text-slate-600 {
+  color: #aab6c9;
+}
+.dark [data-app-shell] .text-slate-500 {
+  color: #8f9cb3;
+}
+.dark [data-app-shell] .text-slate-400 {
+  color: #6b7a94;
+}
+.dark [data-app-shell] .text-slate-300 {
+  color: #4a5a75;
+}
+.dark [data-app-shell] .text-blue-700 {
+  color: #93c5fd;
+}
+.dark [data-app-shell] .text-blue-600 {
+  color: #60a5fa;
+}
+
+/* Rings */
+.dark [data-app-shell] .ring-slate-200 {
+  --tw-ring-color: #24324a;
+}
+.dark [data-app-shell] .ring-blue-100 {
+  --tw-ring-color: rgb(59 130 246 / 0.3);
+}
+
+/* Editor inline inputs */
+.dark [data-app-shell] .field-input {
+  background: #0f172a;
+  border-color: #24324a;
+  color: #cbd5e1;
+}
+.dark [data-app-shell] .field-input::placeholder {
+  color: #64748b;
 }
