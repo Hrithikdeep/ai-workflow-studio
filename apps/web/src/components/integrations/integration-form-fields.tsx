@@ -54,7 +54,8 @@ const PROVIDER_FIELDS: Record<IntegrationProvider, FieldDef[]> = {
       key: 'ssl',
       label: 'SSL mode',
       kind: 'select',
-      options: ['', 'disable', 'prefer', 'require'],
+      options: ['', 'disable', 'prefer', 'require', 'no-verify'],
+      help: 'Use "no-verify" for TLS with a self-signed certificate (e.g. a managed Postgres behind a proxy).',
     },
     {
       key: 'credential',

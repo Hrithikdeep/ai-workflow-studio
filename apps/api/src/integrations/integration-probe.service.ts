@@ -387,12 +387,20 @@ export class IntegrationProbeService {
     }
 
     const sslMode = firstString(config.ssl);
+    // Mirror the executor's `toSslOption` for the modes that imply TLS: both
+    // `require` and `no-verify` connect over TLS without certificate
+    // verification here so the probe result matches what the executor will do
+    // (a managed Postgres behind a proxy typically presents a self-signed cert).
+    const sslOption =
+      sslMode === 'require' || sslMode === 'no-verify'
+        ? { rejectUnauthorized: false }
+        : undefined;
     const client = new PgClient(
       connectionString
         ? {
             connectionString,
             connectionTimeoutMillis: timeoutMs,
-            ssl: sslMode === 'require' ? { rejectUnauthorized: false } : undefined,
+            ssl: sslOption,
             statement_timeout: timeoutMs,
           }
         : {
@@ -402,7 +410,7 @@ export class IntegrationProbeService {
             user: firstString(config.username) ?? undefined,
             password,
             connectionTimeoutMillis: timeoutMs,
-            ssl: sslMode === 'require' ? { rejectUnauthorized: false } : undefined,
+            ssl: sslOption,
             statement_timeout: timeoutMs,
           },
     );

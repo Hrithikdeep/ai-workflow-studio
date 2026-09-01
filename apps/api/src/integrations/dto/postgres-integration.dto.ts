@@ -41,8 +41,8 @@ export class PostgresIntegrationConfigDto extends BaseIntegrationConfigDto {
 
   @IsOptional()
   @IsString()
-  @Matches(/^(require|prefer|disable)$/, {
-    message: 'ssl must be one of: require, prefer, disable',
+  @Matches(/^(require|prefer|disable|no-verify)$/, {
+    message: 'ssl must be one of: require, prefer, disable, no-verify',
   })
   ssl?: string;
 
