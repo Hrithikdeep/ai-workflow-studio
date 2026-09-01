@@ -14,6 +14,13 @@ export class GoogleApiError extends Error {
     readonly slug: string,
     readonly httpStatus: number,
     message: string,
+    /**
+     * Optional sanitized, human-readable detail taken from Google's response
+     * (`error.message` / `error.errors[0].reason` / `error_description`).
+     * Already stripped of anything token-shaped — safe to log and to include
+     * in an execution record. `undefined` when Google gave no usable text.
+     */
+    readonly detail?: string,
   ) {
     super(message);
     this.name = 'GoogleApiError';
@@ -124,7 +131,12 @@ export class GmailClient {
     const json = (await res.json().catch(() => ({}))) as {
       id?: string;
       threadId?: string;
-      error?: { status?: string; message?: string; code?: number };
+      error?: {
+        status?: string;
+        message?: string;
+        code?: number;
+        errors?: Array<{ message?: string; domain?: string; reason?: string }>;
+      };
     };
     if (!res.ok || !json.id) {
       const slug =
@@ -136,7 +148,12 @@ export class GmailClient {
             : res.status === 429
               ? 'RESOURCE_EXHAUSTED'
               : 'gmail_send_failed');
-      throw new GoogleApiError(slug, res.status, 'Gmail rejected the message.');
+      throw new GoogleApiError(
+        slug,
+        res.status,
+        'Gmail rejected the message.',
+        describeGoogleError(json.error),
+      );
     }
     return { id: json.id, threadId: json.threadId };
   }
@@ -185,6 +202,9 @@ export class GmailClient {
         json.error || 'token_request_failed',
         res.status,
         'Google rejected the authorization.',
+        json.error_description
+          ? sanitizeGoogleText(json.error_description)
+          : undefined,
       );
     }
     return {
@@ -224,6 +244,48 @@ export class GmailClient {
 /** Strip CR/LF so a value can't inject extra headers. */
 function sanitizeHeader(value: string): string {
   return value.replace(/[\r\n]+/g, ' ').trim();
+}
+
+/**
+ * Remove anything token-shaped from a Google-supplied string and bound its
+ * length, so the text is safe to log and to store on an execution record.
+ */
+function sanitizeGoogleText(raw: string): string {
+  return raw
+    .replace(/ya29\.[A-Za-z0-9._-]+/g, 'ya29.***')
+    .replace(/1\/\/[A-Za-z0-9._-]+/g, '1//***')
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer ***')
+    .replace(
+      /\b(access_token|refresh_token|id_token|client_secret)\b\s*[=:]\s*[^\s&"']+/gi,
+      '$1=***',
+    )
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 300);
+}
+
+/**
+ * Build a short, sanitized description from a Gmail API error object:
+ * `errors[0].reason` (a stable machine token like `failedPrecondition`) plus
+ * `error.message` / `errors[0].message` (the human sentence). Returns
+ * `undefined` when Google supplied nothing usable.
+ */
+function describeGoogleError(
+  error:
+    | {
+        message?: string;
+        errors?: Array<{ message?: string; reason?: string }>;
+      }
+    | undefined,
+): string | undefined {
+  if (!error) return undefined;
+  const reason = error.errors?.[0]?.reason;
+  const message = error.message || error.errors?.[0]?.message;
+  const parts = [reason, message].filter(
+    (part): part is string => typeof part === 'string' && part.trim() !== '',
+  );
+  if (parts.length === 0) return undefined;
+  return sanitizeGoogleText(parts.join(': '));
 }
 
 /** RFC 2047-encode a subject only if it contains non-ASCII. */

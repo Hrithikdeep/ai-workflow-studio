@@ -136,7 +136,22 @@ export class GmailNodeExecutor {
     phase: 'auth' | 'send',
   ): NodeExecutionResult {
     const slug = error instanceof GoogleApiError ? error.slug : 'unknown';
-    this.logger.warn(`Gmail node ${node.id}: ${phase} failed (${slug})`);
+    const httpStatus =
+      error instanceof GoogleApiError && error.httpStatus > 0
+        ? error.httpStatus
+        : undefined;
+    // `GmailClient` already sanitizes this; sanitize again here since this is
+    // the boundary that writes the execution record.
+    const googleDetail =
+      error instanceof GoogleApiError
+        ? sanitizeGoogleDetail(error.detail)
+        : undefined;
+
+    this.logger.warn(
+      `Gmail node ${node.id}: ${phase} failed ` +
+        `(slug=${slug}, httpStatus=${httpStatus ?? 'n/a'}` +
+        `${googleDetail ? `, google=${JSON.stringify(googleDetail)}` : ''})`,
+    );
 
     const { message, code } = ((): { message: string; code: string } => {
       switch (slug) {
@@ -155,6 +170,15 @@ export class GmailNodeExecutor {
             message: 'The Gmail authorization is missing the send permission.',
             code: 'INSUFFICIENT_SCOPE',
           };
+        case 'FAILED_PRECONDITION':
+          return {
+            message:
+              'The connected Google account is not able to send mail through the Gmail API. ' +
+              'If this is a Google Workspace account, an administrator may have disabled Gmail ' +
+              'API sending; otherwise the account is not fully provisioned to send. Reconnect a ' +
+              'standard Gmail account or contact your Workspace administrator.',
+            code: 'FAILED_PRECONDITION',
+          };
         case 'RESOURCE_EXHAUSTED':
           return { message: 'Gmail rate limited the request. Try again shortly.', code: 'RATE_LIMITED' };
         case 'INVALID_ARGUMENT':
@@ -163,10 +187,24 @@ export class GmailNodeExecutor {
           return { message: 'The Gmail request timed out.', code: 'TIMEOUT' };
         case 'network_error':
           return { message: 'Could not reach the Gmail API.', code: 'NETWORK' };
-        default:
-          return { message: 'Gmail rejected the request.', code: 'GMAIL_ERROR' };
+        default: {
+          const parts: string[] = [];
+          if (slug && slug !== 'unknown') parts.push(slug);
+          if (typeof httpStatus === 'number') parts.push(`HTTP ${httpStatus}`);
+          const suffix = parts.length > 0 ? ` (${parts.join(', ')})` : '';
+          return {
+            message: `Gmail rejected the request${suffix}.`,
+            code: 'GMAIL_ERROR',
+          };
+        }
       }
     })();
+
+    // Attach Google's own reason text when it added anything useful, so the
+    // execution record shows the real cause instead of only the mapped summary.
+    const finalMessage = googleDetail
+      ? `${message} — ${googleDetail}`
+      : message;
 
     return {
       status: ExecutionStepStatus.FAILED,
@@ -178,10 +216,29 @@ export class GmailNodeExecutor {
         code,
         status: 'FAILED',
       },
-      error: message,
+      error: finalMessage,
       branch: null,
     };
   }
+}
+
+/**
+ * Defence-in-depth sanitizer for the Google-supplied detail string before it
+ * lands in a persisted execution record. Mirrors `GmailClient`'s own scrub.
+ */
+function sanitizeGoogleDetail(raw: string | undefined): string | undefined {
+  if (typeof raw !== 'string' || raw.trim() === '') return undefined;
+  return raw
+    .replace(/ya29\.[A-Za-z0-9._-]+/g, 'ya29.***')
+    .replace(/1\/\/[A-Za-z0-9._-]+/g, '1//***')
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer ***')
+    .replace(
+      /\b(access_token|refresh_token|id_token|client_secret)\b\s*[=:]\s*[^\s&"']+/gi,
+      '$1=***',
+    )
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 300);
 }
 
 function str(value: unknown): string {

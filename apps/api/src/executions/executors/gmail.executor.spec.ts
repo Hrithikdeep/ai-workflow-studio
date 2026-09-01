@@ -230,4 +230,77 @@ describe('GmailNodeExecutor', () => {
     expect(send).toHaveBeenCalledTimes(2);
     expect(res.status).toBe(ExecutionStepStatus.FAILED);
   });
+
+  it('FAILED_PRECONDITION -> explicit, actionable mapping (account cannot send)', async () => {
+    const { executor } = makeExecutor({
+      send: jest
+        .fn()
+        .mockRejectedValue(
+          new GoogleApiError(
+            'FAILED_PRECONDITION',
+            400,
+            'Gmail rejected the message.',
+            'failedPrecondition: Precondition check failed.',
+          ),
+        ),
+    });
+    const res = await executor.execute(node, goodConfig, ctx('ws-1'));
+    expect(res.status).toBe(ExecutionStepStatus.FAILED);
+    expect(res.output.code).toBe('FAILED_PRECONDITION');
+    expect(res.error).toMatch(/Workspace administrator|not able to send mail/i);
+    // Google's own reason text is appended for the operator.
+    expect(res.error).toContain('Precondition check failed.');
+  });
+
+  it('unmapped Google failure -> execution error carries slug + HTTP status + Google message', async () => {
+    const { executor } = makeExecutor({
+      send: jest
+        .fn()
+        .mockRejectedValue(
+          new GoogleApiError(
+            'gmail_send_failed',
+            503,
+            'Gmail rejected the message.',
+            'backendError: The service is currently unavailable.',
+          ),
+        ),
+    });
+    const res = await executor.execute(node, goodConfig, ctx('ws-1'));
+    expect(res.status).toBe(ExecutionStepStatus.FAILED);
+    expect(res.output.code).toBe('GMAIL_ERROR');
+    expect(res.error).toContain('gmail_send_failed');
+    expect(res.error).toContain('HTTP 503');
+    expect(res.error).toContain('The service is currently unavailable.');
+  });
+
+  it('a non-GoogleApiError still yields the exact generic message (no slug/status)', async () => {
+    const { executor } = makeExecutor({
+      send: jest.fn().mockRejectedValue(new Error('socket hang up')),
+    });
+    const res = await executor.execute(node, goodConfig, ctx('ws-1'));
+    expect(res.output.code).toBe('GMAIL_ERROR');
+    expect(res.error).toBe('Gmail rejected the request.');
+  });
+
+  it('token-shaped text in the Google detail is scrubbed before it reaches the record', async () => {
+    const { executor } = makeExecutor({
+      send: jest
+        .fn()
+        .mockRejectedValue(
+          new GoogleApiError(
+            'gmail_send_failed',
+            500,
+            'Gmail rejected the message.',
+            'failed with Authorization: Bearer ya29.LEAKED-TOKEN-VALUE',
+          ),
+        ),
+    });
+    const res = await executor.execute(node, goodConfig, ctx('ws-1'));
+    const s = JSON.stringify(res);
+    expect(s).not.toContain('LEAKED-TOKEN-VALUE');
+    expect(s).not.toMatch(/Bearer\s+ya29/);
+    expect(s).not.toMatch(/ya29\.[A-Za-z0-9-]{4,}/);
+    // the detail is still surfaced, just with the token redacted
+    expect(res.error).toContain('***');
+  });
 });
