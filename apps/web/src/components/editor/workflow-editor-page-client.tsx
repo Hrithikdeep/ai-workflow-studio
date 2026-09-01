@@ -337,9 +337,13 @@ export default function WorkflowEditorPageClient({
 
     const loadWorkflowMeta = async () => {
       try {
-        const workflow = await getWorkflow(
-          workflowId,
-        );
+        // Fetch the workflow and its versions together — they don't depend on
+        // each other, so serializing them just doubled the time to first paint
+        // when arriving here from "View Workflow".
+        const [workflow, versions] = await Promise.all([
+          getWorkflow(workflowId),
+          getWorkflowVersions(workflowId),
+        ]);
 
         if (!active) {
           return;
@@ -353,14 +357,6 @@ export default function WorkflowEditorPageClient({
           setWorkflowDescription(
             workflow.description,
           );
-        }
-
-        const versions = await getWorkflowVersions(
-          workflowId,
-        );
-
-        if (!active) {
-          return;
         }
 
         const latestVersion =
@@ -847,9 +843,18 @@ export default function WorkflowEditorPageClient({
       (
         nextNodes: Node<WorkflowCanvasNodeData>[],
         nextEdges: Edge[],
+        // `false` for in-progress drag frames and React Flow's node-measurement
+        // passes: move the node on the canvas, but don't snapshot history,
+        // re-resolve the selection, or flip to "unsaved" on every pointer move
+        // (or immediately on load).
+        commit: boolean = true,
       ) => {
         setNodes(nextNodes);
         setEdges(nextEdges);
+
+        if (!commit) {
+          return;
+        }
 
         setSelectedNode(
           (current) => {
@@ -1169,47 +1174,22 @@ export default function WorkflowEditorPageClient({
     [storageKey],
   );
 
-  useEffect(() => {
-    if (!storageKey) {
-      return;
-    }
-
-    try {
-      const raw =
-        window.localStorage.getItem(
-          storageKey,
-        );
-
-      if (!raw) {
-        return;
-      }
-
-      const parsed = JSON.parse(raw) as {
-        nodes?: Node<WorkflowCanvasNodeData>[];
-        edges?: Edge[];
-      };
-
-      if (Array.isArray(parsed.nodes)) {
-        setNodes(parsed.nodes);
-      }
-
-      if (Array.isArray(parsed.edges)) {
-        setEdges(parsed.edges);
-      }
-
-      setSaveStatus('saved');
-    } catch (error) {
-      console.error(
-        '[Relay] Failed to restore workflow state:',
-        error,
-      );
-      window.localStorage.removeItem(storageKey);
-    }
-  }, [storageKey]);
+  /*
+   * The server graph (loaded above) is the single source of truth on mount.
+   * We intentionally do NOT restore from localStorage here: that read ran
+   * synchronously and won the first paint, then the async server response
+   * overwrote it a moment later — a visible flicker, and a way for a stale
+   * cached copy to briefly replace freshly loaded data. `persistWorkflowState`
+   * still writes a local copy after every successful save as an offline cache.
+   */
 
   /* ------------------------------------------------------------------------ */
   /* Save                                                                      */
   /* ------------------------------------------------------------------------ */
+
+  // Synchronous in-flight latch: `saveStatus` only flips on the next render, so
+  // a second click in the same tick could otherwise fire a duplicate PUT.
+  const savingRef = useRef(false);
 
   const handleSave = useCallback(async () => {
   if (!resolvedVersionId) {
@@ -1217,6 +1197,11 @@ export default function WorkflowEditorPageClient({
     setSaveError('Missing workflow version.');
     return;
   }
+
+  if (savingRef.current) {
+    return;
+  }
+  savingRef.current = true;
 
   setSaveStatus('saving');
   setSaveError(null);
@@ -1295,6 +1280,8 @@ export default function WorkflowEditorPageClient({
 
     // IMPORTANT:
     // Do NOT persist failed saves as if they were saved.
+  } finally {
+    savingRef.current = false;
   }
 }, [
   resolvedVersionId,

@@ -1,5 +1,7 @@
 'use client';
 
+import { memo } from 'react';
+
 import {
   Bot,
   Braces,
@@ -240,7 +242,7 @@ function getConfigDescription(
 /* COMPONENT                                                                  */
 /* -------------------------------------------------------------------------- */
 
-export default function WorkflowNode({
+function WorkflowNode({
   data,
   selected,
 }: NodeProps<WorkflowNodeData>) {
@@ -444,3 +446,10 @@ export default function WorkflowNode({
     </div>
   );
 }
+
+/*
+ * React Flow re-renders a node whenever its wrapper reconciles. Memoizing keeps
+ * an unchanged node (stable `data` / `selected`) from re-rendering when a
+ * sibling node moves or the graph array identity changes.
+ */
+export default memo(WorkflowNode);

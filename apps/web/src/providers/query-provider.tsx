@@ -14,7 +14,11 @@ export function QueryProvider({ children }: { children: ReactNode }) {
             refetchOnWindowFocus: false,
           },
           mutations: {
-            retry: 1,
+            // Writes (save graph, publish, delete, retry-run) must not silently
+            // re-fire on a transient failure — a duplicate POST/PUT and a
+            // delayed error message are both worse than surfacing the failure
+            // immediately so the user can retry.
+            retry: 0,
           },
         },
       }),

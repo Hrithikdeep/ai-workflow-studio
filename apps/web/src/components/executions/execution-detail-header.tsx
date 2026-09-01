@@ -142,9 +142,17 @@ export function ExecutionDetailHeader({
           <button
             type="button"
             onClick={() => {
-              if (workflowId) {
-                router.push(`/workflows/${workflowId}`);
+              if (!workflowId) {
+                return;
               }
+              // Navigate straight to the exact version this execution ran, so
+              // the editor can load its graph immediately instead of first
+              // round-tripping to resolve the latest version.
+              router.push(
+                workflowVersionId
+                  ? `/workflows/${workflowId}/${workflowVersionId}`
+                  : `/workflows/${workflowId}`,
+              );
             }}
             disabled={!workflowId}
             className="hidden h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-slate-100 px-3 text-[11px] font-medium text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50 sm:inline-flex"

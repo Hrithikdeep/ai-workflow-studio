@@ -5,6 +5,7 @@ import {
   useCallback,
   useImperativeHandle,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
@@ -90,6 +91,14 @@ export type WorkflowCanvasProps = {
   onGraphChange?: (
     nodes: Node<WorkflowCanvasNodeData>[],
     edges: Edge[],
+    /**
+     * `true`  — a structural change the parent should record in history and
+     *           mark as unsaved (drag stop, connect, drop, delete).
+     * `false` — a transient update (an in-progress drag frame, React Flow
+     *           bookkeeping like node measurement); apply it so the canvas
+     *           stays smooth, but don't snapshot history or flip save state.
+     */
+    commit?: boolean,
   ) => void;
 
   className?: string;
@@ -126,6 +135,20 @@ function normalizeInitialNodes(
       node.type ||
       'output';
 
+    // Preserve object identity for nodes that are already in canonical shape.
+    // Rebuilding every node (and its `data`) on each render forced React Flow
+    // to re-render/re-mount every node — the cause of the drag flicker and of
+    // a single config edit re-rendering the whole graph.
+    if (
+      node.type === 'workflow' &&
+      data.type === actualType &&
+      node.draggable === true &&
+      node.selectable === true &&
+      node.connectable === true
+    ) {
+      return node;
+    }
+
     return {
       ...node,
 
@@ -141,6 +164,44 @@ function normalizeInitialNodes(
       connectable: true,
     };
   });
+}
+
+/* -------------------------------------------------------------------------- */
+/* CHANGE CLASSIFICATION                                                      */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Distinguishes an in-progress drag / React Flow bookkeeping change (node
+ * measurement, selection) from a structural edit. Only a structural,
+ * non-dragging change should reach the parent's history + "unsaved" state;
+ * everything else is applied so the canvas stays smooth but is not committed.
+ */
+function classifyNodeChanges(changes: NodeChange[]): {
+  isDragging: boolean;
+  isStructural: boolean;
+} {
+  let isDragging = false;
+  let isStructural = false;
+
+  for (const change of changes) {
+    if (change.type === 'position') {
+      if (change.dragging) {
+        isDragging = true;
+      } else {
+        // drag stop (dragging === false / undefined) — commit the final spot
+        isStructural = true;
+      }
+    } else if (
+      change.type === 'add' ||
+      change.type === 'remove' ||
+      change.type === 'reset'
+    ) {
+      isStructural = true;
+    }
+    // 'dimensions' and 'select' are transient: applied, never committed.
+  }
+
+  return { isDragging, isStructural };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -404,6 +465,7 @@ const WorkflowCanvasInner = forwardRef<
     (
       nextNodes: Node<WorkflowCanvasNodeData>[],
       nextEdges: Edge[],
+      commit = true,
     ) => {
       /*
        * Preferred path.
@@ -415,6 +477,7 @@ const WorkflowCanvasInner = forwardRef<
         onGraphChange(
           nextNodes,
           nextEdges,
+          commit,
         );
 
         return;
@@ -492,10 +555,19 @@ const WorkflowCanvasInner = forwardRef<
          * No parent state update happens
          * inside applyNodeChanges or a
          * React state updater.
+         *
+         * `commit` is false for in-progress drag frames and for React Flow's
+         * own measurement passes, so the parent still moves the node on the
+         * canvas but does not snapshot history or flip to "unsaved" on every
+         * pointer move / on load.
          */
+        const { isDragging, isStructural } =
+          classifyNodeChanges(changes);
+
         emitGraphChange(
           nextNodes,
           edges,
+          isStructural && !isDragging,
         );
       },
       [
@@ -1038,15 +1110,46 @@ const WorkflowCanvasInner = forwardRef<
   /* SELECTED NODE STYLING                                                    */
   /* ------------------------------------------------------------------------ */
 
+  /*
+   * Cache the styled wrapper per node so a render that changes only one node
+   * (a drag frame, a config edit) or only the selection re-allocates just the
+   * nodes that actually changed. Rebuilding every styled node on every render
+   * made React Flow reconcile the whole graph mid-drag.
+   */
+  const styledNodeCacheRef = useRef(
+    new Map<
+      string,
+      {
+        base: Node<WorkflowCanvasNodeData>;
+        selected: boolean;
+        out: Node<WorkflowCanvasNodeData>;
+      }
+    >(),
+  );
+
   const styledNodes =
     useMemo(() => {
-      return nodes.map(
+      const cache = styledNodeCacheRef.current;
+      const nextIds = new Set<string>();
+
+      const result = nodes.map(
         (node) => {
           const selected =
             node.id ===
             selectedNodeId;
 
-          return {
+          nextIds.add(node.id);
+
+          const cached = cache.get(node.id);
+          if (
+            cached &&
+            cached.base === node &&
+            cached.selected === selected
+          ) {
+            return cached.out;
+          }
+
+          const out = {
             ...node,
 
             selected,
@@ -1063,8 +1166,19 @@ const WorkflowCanvasInner = forwardRef<
                 : '0 1px 2px rgba(15, 23, 42, 0.06)',
             },
           };
+
+          cache.set(node.id, { base: node, selected, out });
+          return out;
         },
       );
+
+      for (const key of cache.keys()) {
+        if (!nextIds.has(key)) {
+          cache.delete(key);
+        }
+      }
+
+      return result;
     }, [
       nodes,
       selectedNodeId,
