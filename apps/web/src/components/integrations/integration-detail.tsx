@@ -124,10 +124,6 @@ export function IntegrationDetail({
     }
   }, [gmailParam, refetch]);
 
-  const apiBase = (
-    process.env.NEXT_PUBLIC_API_URL?.trim() || "http://localhost:3001"
-  ).replace(/\/+$/, "");
-
   const [name, setName] = useState("");
   const [values, setValues] = useState<Record<string, string>>({});
   const [snapshot, setSnapshot] = useState<{
@@ -380,7 +376,6 @@ export function IntegrationDetail({
                       : null
                   }
                   connected={data.status === "connected"}
-                  apiBase={apiBase}
                 />
               ) : (
                 <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -475,14 +470,17 @@ function GmailCredentialPanel({
   integrationId,
   account,
   connected,
-  apiBase,
 }: {
   integrationId: string;
   account: string | null;
   connected: boolean;
-  apiBase: string;
 }) {
-  const startUrl = `${apiBase}/integrations/gmail/oauth/start?integrationId=${encodeURIComponent(
+  // Same-origin: the authenticated OAuth START goes through the Next API proxy
+  // (`/api/*`), which forwards the first-party `AWF_AT` cookie to the real API
+  // server-to-server. The API then 302-redirects to Google, the proxy relays
+  // that redirect, and Google's registered redirect_uri still points at the
+  // API's own `/integrations/gmail/oauth/callback` (state-authenticated).
+  const startUrl = `/api/integrations/gmail/oauth/start?integrationId=${encodeURIComponent(
     integrationId,
   )}&redirectTo=${encodeURIComponent(`/integrations/${integrationId}`)}`;
 
